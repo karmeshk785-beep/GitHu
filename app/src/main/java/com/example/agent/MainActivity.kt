@@ -8,10 +8,10 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.RecognizerIntent
-import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -20,9 +20,9 @@ class MainActivity : Activity() {
 
     private val voiceRequest = 101
     private val handler = Handler(Looper.getMainLooper())
-    private var selected: Agent? = null
-    private val cards = mutableMapOf<String, TextView>()
+    private var selectedId: String? = null
 
+    private lateinit var office: OfficeView
     private lateinit var targetLabel: TextView
     private lateinit var chatLog: TextView
     private lateinit var cmdInput: EditText
@@ -43,22 +43,24 @@ class MainActivity : Activity() {
             setTextColor(Color.BLACK)
         })
 
-        val officeScroll = ScrollView(this)
-        val officeGrid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        officeScroll.addView(officeGrid)
-        root.addView(officeScroll, LinearLayout.LayoutParams(
+        // Upar: animated office
+        office = OfficeView(this)
+        root.addView(office, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.2f))
 
-        AgentRegistry.agents.chunked(3).forEach { rowAgents ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            rowAgents.forEach { agent ->
-                val card = makeCard(agent)
-                row.addView(card, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                    .apply { setMargins(8, 8, 8, 8) })
-            }
-            officeGrid.addView(row)
+        // Agent chunne ke buttons
+        val pickRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        AgentRegistry.agents.forEach { agent ->
+            pickRow.addView(Button(this).apply {
+                text = agent.name
+                setOnClickListener { select(agent.id) }
+            })
         }
+        val pickScroll = HorizontalScrollView(this)
+        pickScroll.addView(pickRow)
+        root.addView(pickScroll)
 
+        // Neeche: chat aur command
         targetLabel = TextView(this).apply {
             text = "Agent chuno upar se"
             textSize = 16f
@@ -96,43 +98,17 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
-    private fun makeCard(agent: Agent): TextView {
-        val card = TextView(this).apply {
-            text = render(agent)
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setPadding(12, 24, 12, 24)
-            setBackgroundColor(Color.WHITE)
-            setOnClickListener { select(agent) }
-        }
-        cards[agent.id] = card
-        return card
-    }
-
-    private fun render(agent: Agent): String {
-        val icon = when (agent.status) {
-            Status.IDLE -> "🤖"
-            Status.WORKING -> "⚙️"
-            Status.DONE -> "✅"
-            Status.FAILED -> "❌"
-        }
-        return "$icon\n${agent.name}\n${agent.role}"
-    }
-
-    private fun setStatus(agent: Agent, status: Status) {
-        agent.status = status
-        cards[agent.id]?.text = render(agent)
-    }
-
-    private fun select(agent: Agent) {
-        selected = agent
-        targetLabel.text = "Agent: ${agent.name}"
+    private fun select(id: String) {
+        selectedId = id
+        val agent = AgentRegistry.agents.find { it.id == id }
+        targetLabel.text = "Agent: ${agent?.name ?: ""}"
     }
 
     private fun sendCommand() {
         val command = cmdInput.text.toString().trim()
-        val agent = selected
         if (command.isEmpty()) return
+
+        val agent = AgentRegistry.agents.find { it.id == selectedId }
         if (agent == null) {
             chatLog.append("\n\nPehle koi agent chuno.")
             return
@@ -140,17 +116,11 @@ class MainActivity : Activity() {
 
         chatLog.append("\n\nAap (${agent.name}): $command")
         cmdInput.setText("")
-        setStatus(agent, Status.WORKING)
 
+        agent.status = Status.WORKING
         handler.postDelayed({
-            val passed = true
-            if (passed) {
-                setStatus(agent, Status.DONE)
-                chatLog.append("\nReferee: pass, kaam ho gaya.")
-            } else {
-                setStatus(agent, Status.FAILED)
-                chatLog.append("\nReferee: fail, dobara koshish karunga.")
-            }
+            agent.status = Status.IDLE
+            chatLog.append("\nAgent: Asli kaam abhi jud nahi hua hai. Ye sirf dikhava hai.")
         }, 1500)
     }
 
